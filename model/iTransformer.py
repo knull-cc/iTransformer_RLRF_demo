@@ -18,6 +18,8 @@ class Model(nn.Module):
         self.pred_len = configs.pred_len
         self.output_attention = configs.output_attention
         self.use_norm = configs.use_norm
+        # optional predictor+corrector heads
+        self.enable_corrector = getattr(configs, 'enable_corrector', False)
         # Embedding
         self.enc_embedding = DataEmbedding_inverted(configs.seq_len, configs.d_model, configs.embed, configs.freq,
                                                     configs.dropout)
@@ -37,7 +39,11 @@ class Model(nn.Module):
             ],
             norm_layer=torch.nn.LayerNorm(configs.d_model)
         )
-        self.projector = nn.Linear(configs.d_model, configs.pred_len, bias=True)
+        if self.enable_corrector:
+            self.projector_pred = nn.Linear(configs.d_model, configs.pred_len, bias=True)
+            self.projector_corr = nn.Linear(configs.d_model, configs.pred_len, bias=True)
+        else:
+            self.projector = nn.Linear(configs.d_model, configs.pred_len, bias=True)
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         if self.use_norm:
@@ -61,20 +67,50 @@ class Model(nn.Module):
         enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
         # B N E -> B N S -> B S N 
-        dec_out = self.projector(enc_out).permute(0, 2, 1)[:, :, :N] # filter the covariates
+        if self.enable_corrector:
+            dec_pred = self.projector_pred(enc_out).permute(0, 2, 1)[:, :, :N]
+            dec_corr = self.projector_corr(enc_out).permute(0, 2, 1)[:, :, :N]
+            dec_out = dec_pred + dec_corr
+        else:
+            dec_out = self.projector(enc_out).permute(0, 2, 1)[:, :, :N] # filter the covariates
 
         if self.use_norm:
             # De-Normalization from Non-stationary Transformer
-            dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
-            dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+            scale = (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+            shift = (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+            if self.enable_corrector:
+                dec_pred = dec_pred * scale + shift
+                dec_corr = dec_corr * scale  # residual in value scale
+                dec_out = dec_pred + dec_corr
+            else:
+                dec_out = dec_out * scale + shift
 
-        return dec_out, attns, enc_out
+        if self.enable_corrector:
+            extra = {
+                'out': dec_out,
+                'pred': dec_pred,
+                'corr': dec_corr,
+                'attn': attns,
+                'feat': enc_out,
+            }
+            return extra
+        else:
+            return dec_out, attns, enc_out
 
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
-        dec_out, attns, enc_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+        out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
 
-        if self.output_attention:
-            return dec_out[:, -self.pred_len:, :], attns, enc_out
+        if self.enable_corrector:
+            # Align horizon to last pred_len for safety
+            for k in ['out', 'pred', 'corr']:
+                if out[k].shape[1] > self.pred_len:
+                    out[k] = out[k][:, -self.pred_len:, :]
+            return out
         else:
-            return dec_out[:, -self.pred_len:, :]  # [B, L, D]
+            dec_out, attns, enc_out = out
+
+            if self.output_attention:
+                return dec_out[:, -self.pred_len:, :], attns, enc_out
+            else:
+                return dec_out[:, -self.pred_len:, :]  # [B, L, D]

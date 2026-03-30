@@ -66,6 +66,9 @@ if __name__ == '__main__':
     parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
     parser.add_argument('--do_predict', action='store_true', help='whether to predict unseen future data')
 
+    # heads
+    parser.add_argument('--enable_corrector', action='store_true', default=False, help='enable second head as corrector (residual)')
+
     # distillation / RLRF options
     parser.add_argument('--enable_distill', action='store_true', default=False, help='enable two-stage distillation fine-tuning')
     parser.add_argument('--teacher_model', type=str, default='iTransformer', help='teacher model arch, e.g., iTransformer/iInformer/...')
@@ -75,6 +78,26 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_out', type=float, default=0.0, help='weight for output distillation loss')
     parser.add_argument('--supervised_epochs', type=int, default=0, help='epochs for stage-1 supervised training (<=0 uses half epochs)')
     parser.add_argument('--horizon_weighting', type=bool, default=True, help='whether to use horizon-weighted losses for L_sup/L_out')
+
+    # teacher-student EMA
+    parser.add_argument('--ema_teacher', action='store_true', default=False, help='use EMA teacher tracking the student')
+    parser.add_argument('--ema_alpha', type=float, default=0.995, help='EMA decay factor for teacher update')
+
+    # auxiliary losses for heads
+    parser.add_argument('--lambda_pred_aux', type=float, default=0.0, help='aux loss weight on predictor head')
+    parser.add_argument('--lambda_corr_reg', type=float, default=0.0, help='L2 regularization weight on corrector residual')
+
+    # multi-scalar loss weights
+    parser.add_argument('--w_point', type=float, default=1.0, help='weight: point MSE')
+    parser.add_argument('--w_dir', type=float, default=0.5, help='weight: direction error')
+    parser.add_argument('--w_trend', type=float, default=0.5, help='weight: trend error')
+    parser.add_argument('--w_vol', type=float, default=0.5, help='weight: volatility error')
+    parser.add_argument('--w_bias', type=float, default=0.1, help='weight: bias error')
+    parser.add_argument('--w_lag', type=float, default=0.1, help='weight: lag error')
+    parser.add_argument('--trend_window', type=int, default=5, help='moving average window for trend')
+    parser.add_argument('--vol_window', type=int, default=5, help='window for rolling std')
+    parser.add_argument('--local_window', type=int, default=0, help='focus last K steps; 0 disables')
+    parser.add_argument('--local_mode', type=str, default='tail', help='localization mode: tail/all')
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=50, help='data loader num workers')
