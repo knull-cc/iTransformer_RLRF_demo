@@ -68,13 +68,13 @@ class Model(nn.Module):
             dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
             dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
 
-        return dec_out, attns
+        return dec_out, attns, enc_out
 
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
-        dec_out, attns = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
-        
+        dec_out, attns, enc_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+
         if self.output_attention:
-            return dec_out[:, -self.pred_len:, :], attns
+            return dec_out[:, -self.pred_len:, :], attns, enc_out
         else:
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]

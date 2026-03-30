@@ -1,7 +1,6 @@
 import argparse
 import torch
 from experiments.exp_long_term_forecasting import Exp_Long_Term_Forecast
-from experiments.exp_long_term_forecasting_partial import Exp_Long_Term_Forecast_Partial
 import random
 import numpy as np
 
@@ -67,8 +66,18 @@ if __name__ == '__main__':
     parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
     parser.add_argument('--do_predict', action='store_true', help='whether to predict unseen future data')
 
+    # distillation / RLRF options
+    parser.add_argument('--enable_distill', action='store_true', default=False, help='enable two-stage distillation fine-tuning')
+    parser.add_argument('--teacher_model', type=str, default='iTransformer', help='teacher model arch, e.g., iTransformer/iInformer/...')
+    parser.add_argument('--teacher_ckpt', type=str, default='', help='path to teacher checkpoint (optional)')
+    parser.add_argument('--lambda_feature', type=float, default=0.0, help='weight for feature alignment loss')
+    parser.add_argument('--lambda_corr', type=float, default=0.0, help='weight for correlation/attention alignment loss')
+    parser.add_argument('--lambda_out', type=float, default=0.0, help='weight for output distillation loss')
+    parser.add_argument('--supervised_epochs', type=int, default=0, help='epochs for stage-1 supervised training (<=0 uses half epochs)')
+    parser.add_argument('--horizon_weighting', type=bool, default=True, help='whether to use horizon-weighted losses for L_sup/L_out')
+
     # optimization
-    parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
+    parser.add_argument('--num_workers', type=int, default=50, help='data loader num workers')
     parser.add_argument('--itr', type=int, default=1, help='experiments times')
     parser.add_argument('--train_epochs', type=int, default=10, help='train epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
@@ -100,6 +109,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
+    # ensure attention/features available when distillation is enabled
+    if args.enable_distill:
+        args.output_attention = True
 
     if args.use_gpu and args.use_multi_gpu:
         args.devices = args.devices.replace(' ', '')
@@ -110,12 +122,7 @@ if __name__ == '__main__':
     print('Args in experiment:')
     print(args)
 
-    # 实验类选择
-    if args.exp_name == 'partial_train': # See Figure 8 of our paper, for the detail
-        Exp = Exp_Long_Term_Forecast_Partial # 部分变量高效训练
-    else: # MTSF: multivariate time series forecasting
-        Exp = Exp_Long_Term_Forecast # 标准多变量时间序列预测
-
+    Exp = Exp_Long_Term_Forecast
 
     if args.is_training:
         for ii in range(args.itr):
