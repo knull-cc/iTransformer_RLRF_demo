@@ -146,12 +146,20 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             return model_out.get('pred', None), model_out.get('corr', None)
         return None, None
 
+    # def _main_output(self, model_out):
+    #     if isinstance(model_out, dict):
+    #         return model_out.get('out', None) or model_out.get('pred', None)
+    #     if isinstance(model_out, tuple):
+    #         return model_out[0]
+    #     return model_out
+    
     def _main_output(self, model_out):
         if isinstance(model_out, dict):
-            return model_out.get('out', None) or model_out.get('pred', None)
-        if isinstance(model_out, tuple):
-            return model_out[0]
-        return model_out
+            out = model_out.get('out', None)
+            if out is not None:
+                return out
+            return model_out.get('pred', None)
+
 
     def _init_multi_loss(self):
         return MultiScalarForecastLoss(
